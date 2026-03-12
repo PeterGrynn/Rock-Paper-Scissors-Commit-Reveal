@@ -5,7 +5,7 @@ import { RockPaperScissors } from "../typechain-types";
 const Move = { None: 0, Rock: 1, Paper: 2, Scissors: 3 } as const;
 type MoveValue = (typeof Move)[keyof typeof Move];
 
-const BET = ethers.parseEther("0.0005");
+const BET = ethers.parseEther("0.000005");
 const SALT = ethers.id("secret-salt");
 
 function buildCommit(move: MoveValue, salt: string): string {

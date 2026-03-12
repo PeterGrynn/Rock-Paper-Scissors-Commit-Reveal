@@ -86,6 +86,17 @@ contract RockPaperScissors {
         _finish(gameId);
     }
 
+    function claimNoOpponentPlayer2(uint256 gameId) external {
+        Game storage g = games[gameId];
+        if (g.state != GameState.Open) revert InvalidGameState();
+        if (msg.sender != g.player2) revert NotPlayer();
+
+        g.state = GameState.Finished;
+        g.winner = g.player2;
+
+        emit GameFinished(gameId, g.player2, BET);
+        _send(g.player2, BET);
+    }
 
     function claimNoOpponent(uint256 gameId) external {
         Game storage g = games[gameId];
