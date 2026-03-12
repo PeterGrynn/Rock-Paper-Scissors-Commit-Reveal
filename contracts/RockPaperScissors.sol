@@ -77,7 +77,7 @@ contract RockPaperScissors {
         gameCounter++;
     }
 
-    function cancelGame(uint256 gameId) public {
+    function cancelGame(uint256 gameId) external {
         Game storage g = games[gameId];
         if (g.player1 != payable(msg.sender)) revert NotPlayer();
         if (g.player2 != payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();

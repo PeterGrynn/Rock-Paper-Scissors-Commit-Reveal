@@ -283,10 +283,11 @@ describe("RockPaperScissors", () => {
         .withArgs(0, player2.address, BET);
     });
 
-    it("refunds betAmount (player2's own bet) after closeGame", async () => {
+    it("pays full pot 2×BET to player2 after closeGame", async () => {
       await mine(256);
       await expect(rps.connect(player2).closeGame(0)).to.changeEtherBalance(
-        player2, BET, { includeFee: false }
+        // player2 receives the full pot (2×BET) on closeGame
+        player2, BET * 2n, { includeFee: false }
       );
     });
 
@@ -414,25 +415,10 @@ describe("RockPaperScissors", () => {
       ).to.be.revertedWithCustomError(rps, "NotPlayer");
     });
 
-    describe("reveal with no player2 (redirects to cancelGame)", () => {
-      it("cancels the game after 128 blocks — emits GameCanceled", async () => {
+    describe("reveal with no player2", () => {
+      it("reverts with InvalidGameState if there is no player2", async () => {
         await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
         await mine(128);
-        await expect(rps.connect(player1).reveal(0, Move.Rock, SALT))
-          .to.emit(rps, "GameCanceled")
-          .withArgs(0);
-      });
-
-      it("refunds BET to player1 via reveal (no player2 present)", async () => {
-        await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
-        await mine(128);
-        await expect(rps.connect(player1).reveal(0, Move.Rock, SALT)).to.changeEtherBalance(
-          player1, BET, { includeFee: false }
-        );
-      });
-
-      it("reverts if called too early (< 128 blocks) — reveal with no player2", async () => {
-        await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
         await expect(
           rps.connect(player1).reveal(0, Move.Rock, SALT)
         ).to.be.revertedWithCustomError(rps, "InvalidGameState");
@@ -480,13 +466,14 @@ describe("RockPaperScissors", () => {
       );
     });
 
-    it("closeGame — player2 gets only their own BET back (player1 loses their bet)", async () => {
+    it("closeGame — player2 wins the full pot 2×BET (player1 loses their bet)", async () => {
       await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
       await rps.connect(player2).joinGame(0, Move.Scissors, { value: BET });
       await mine(256);
       await expect(rps.connect(player2).closeGame(0)).to.changeEtherBalances(
         [player1, player2, owner],
-        [0n, BET, 0n],
+        // closeGame pays the whole pot to player2
+        [0n, BET * 2n, 0n],
         { includeFee: false }
       );
     });
@@ -808,9 +795,9 @@ describe("RockPaperScissors", () => {
 
       printTable("closeGame — player1 loses BET for not revealing", before, after, gasSpent, gameResult);
 
-      // player2 only gets their own BET back (not the full pot)
+      // closeGame pays the full pot to player2
       expect(gameResult.player1).to.equal(-BET);  // player1 loses their bet
-      expect(gameResult.player2).to.equal(0n);    // player2 recovers their bet
+      expect(gameResult.player2).to.equal(BET);   // player2 gains BET
       expect(gameResult.owner).to.equal(0n);
     });
   });
