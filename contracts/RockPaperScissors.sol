@@ -106,7 +106,11 @@ contract RockPaperScissors {
         if (g.player2 == payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
         if (block.number - g.blockNumber < 256) revert InvalidGameState();
         g.player1 = payable(address(0));
-        _send(g.player2, g.betAmount);
+        uint256 fee = g.betAmount * FEE / 10000;
+        if(fee > 0) {
+            _send(owner, fee);
+        }
+        _send(g.player2, 2 * g.betAmount - fee);
         emit GameClosed(gameId, msg.sender, g.betAmount);
     }
 
