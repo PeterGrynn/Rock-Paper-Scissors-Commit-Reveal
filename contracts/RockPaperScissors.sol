@@ -8,31 +8,40 @@ pragma solidity ^0.8.24;
  */
 contract RockPaperScissors {
     enum Move { None, Rock, Paper, Scissors }
-    enum GameState { Open, Committed, Finished }
 
     struct Game {
-        address player1;
-        address player2;
+        address payable player1;
+        address payable player2;
         bytes32 commitHash; // keccak256(abi.encodePacked(move, password))
-        Move move1;
+        uint128 betAmount;
+        uint64 blockNumber;
         Move move2;
-        GameState state;
-        address winner;
+    }
+    struct Stat {
+        uint32 gamesWon;
+        uint32 gamesLost;
+        uint32 gamesDraw;
+        uint32 gamesRock;
+        uint32 gamesPaper;
+        uint32 gamesScissors;
+        Move lastMove;
     }
 
-    uint256 public constant BET = 0.000005 ether;
-    uint256 public constant FEE_BPS = 100; // 1% = 100 / 10000
+    uint256 public FEE = 0; // in 1/10_000
 
-    address public immutable owner;
+    address public owner;
     uint256 public gameCounter;
     mapping(uint256 => Game) public games;
+    mapping(address => Stat) public stats;
 
-    event GameCreated(uint256 indexed gameId, address indexed player1);
-    event GameJoined(uint256 indexed gameId, address indexed player2);
-    event MoveRevealed(uint256 indexed gameId, address indexed player, Move move);
-    event GameFinished(uint256 indexed gameId, address indexed winner, uint256 prize);
+    event GameCreated(uint256 indexed gameId, address indexed player1, uint128 betAmount);
+    event GameJoined(uint256 indexed gameId, address indexed player2, Move move);
+    event GameCanceled(uint256 indexed gameId);
+    event GameClosed(uint256 indexed gameId, address indexed player2, uint256 betAmount);
+    event GameFinished(uint256 indexed gameId, address indexed winner, uint256 betAmount);
 
     error InvalidMove();
+    error NotOwner();
     error InvalidGameState();
     error InvalidCommit();
     error NotPlayer();
@@ -43,96 +52,107 @@ contract RockPaperScissors {
         owner = msg.sender;
     }
 
+    function changeOwner(address newOwner) external {
+        if (msg.sender != owner) revert NotOwner();
+        owner = newOwner;
+    }
+
+    function changeFee(uint256 newFee) external {
+        if (msg.sender != owner) revert NotOwner();
+        FEE = newFee;
+    }
+
     // ── Player 1: commit move ────────────────────────────────────────────────
     function createGame(bytes32 commitHash) external payable returns (uint256 gameId) {
-        if (msg.value != BET) revert WrongBetAmount();
-
-        gameId = ++gameCounter;
-        games[gameId] = Game({
-            player1: msg.sender,
-            player2: address(0),
+        if (uint256(uint128(msg.value)) != msg.value) revert WrongBetAmount();
+        games[gameCounter] = Game({
+            player1: payable(msg.sender), // 0 indicates closed game
+            player2: payable(address(0)),
             commitHash: commitHash,
-            move1: Move.None,
-            move2: Move.None,
-            state: GameState.Open,
-            winner: address(0)
+            betAmount: uint128(msg.value),
+            blockNumber: uint64(block.number),
+            move2: Move.None
         });
-        emit GameCreated(gameId, msg.sender);
+        emit GameCreated(gameCounter, msg.sender, msg.value);
+        gameCounter++;
+    }
+
+    function cancelGame(uint256 gameId) external {
+        Game storage g = games[gameId];
+        if (g.player1 != payable(msg.sender)) revert NotPlayer();
+        if (g.player2 != payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
+        if (block.number - g.blockNumber < 256) revert InvalidGameState();
+        _send(g.player1, g.betAmount);
+        g.player1 = payable(address(0));
+        emit GameCanceled(gameId);
     }
 
     // ── Player 2: join & play openly ────────────────────────────────────────
     function joinGame(uint256 gameId, Move move) external payable {
         Game storage g = games[gameId];
-        if (g.state != GameState.Open) revert InvalidGameState();
-        if (msg.value != BET) revert WrongBetAmount();
-        if (move == Move.None || move > Move.Scissors) revert InvalidMove();
-
-        g.player2 = msg.sender;
+        if (g.player2 != payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
+        if (msg.value != g.betAmount) revert WrongBetAmount();
+        if (move != Move.Rock && move != Move.Paper && move != Move.Scissors) revert InvalidMove();
+        g.player2 = payable(msg.sender);
         g.move2 = move;
-        g.state = GameState.Committed;
-        emit GameJoined(gameId, msg.sender);
+        g.blockNumber = uint64(block.number);
+        emit GameJoined(gameId, msg.sender, move);
+    }
+
+    function closeGame(uint256 gameId) external {
+        Game storage g = games[gameId];
+        if (g.player2 != payable(msg.sender)) revert NotPlayer();
+        if (g.player2 == payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
+        if (block.number - g.blockNumber < 256) revert InvalidGameState();
+        _send(g.player2, g.betAmount);
+        g.player1 = payable(address(0));
+        emit GameClosed(gameId, msg.sender, g.betAmount);
     }
 
     // ── Player 1: reveal ────────────────────────────────────────────────────
     function reveal(uint256 gameId, Move move, bytes32 salt) external {
         Game storage g = games[gameId];
-        if (g.state != GameState.Committed) revert InvalidGameState();
         if (msg.sender != g.player1) revert NotPlayer();
-        if (move == Move.None || move > Move.Scissors) revert InvalidMove();
+        if (g.player2 == payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
+        if (move != Move.Rock && move != Move.Paper && move != Move.Scissors) revert InvalidMove();
         if (keccak256(abi.encodePacked(move, salt)) != g.commitHash) revert InvalidCommit();
-
-        g.move1 = move;
-        emit MoveRevealed(gameId, msg.sender, move);
-
-        _finish(gameId);
-    }
-
-    function claimNoOpponentPlayer2(uint256 gameId) external {
-        Game storage g = games[gameId];
-        if (g.state != GameState.Open) revert InvalidGameState();
-        if (msg.sender != g.player2) revert NotPlayer();
-
-        g.state = GameState.Finished;
-        g.winner = g.player2;
-
-        emit GameFinished(gameId, g.player2, BET);
-        _send(g.player2, BET);
-    }
-
-    function claimNoOpponent(uint256 gameId) external {
-        Game storage g = games[gameId];
-        if (g.state != GameState.Open) revert InvalidGameState();
-        if (msg.sender != g.player1) revert NotPlayer();
-
-        g.state = GameState.Finished;
-        g.winner = g.player1;
-
-        emit GameFinished(gameId, g.player1, BET);
-        _send(g.player1, BET);
-    }
-
-    // ── Helpers ─────────────────────────────────────────────────────────────
-    function _finish(uint256 gameId) internal {
-        Game storage g = games[gameId];
-        address winner = _evaluate(g.move1, g.move2, g.player1, g.player2);
-        g.winner = winner;
-        g.state = GameState.Finished;
-
-        uint256 pot = BET * 2;
-
+        address winner = _evaluate(move, g.move2, g.player1, g.player2);
         if (winner == address(0)) {
-            // Remis 
-            emit GameFinished(gameId, address(0), 0);
-            _send(g.player1, BET);
-            _send(g.player2, BET);
+            stats[g.player1].gamesDraw++;
+            stats[g.player2].gamesDraw++;
+            _send(g.player1, g.betAmount);
+            _send(g.player2, g.betAmount);
         } else {
-            // 1% fee do ownera
-            uint256 fee = pot * FEE_BPS / 10_000;
-            uint256 prize = pot - fee;
-            emit GameFinished(gameId, winner, prize);
-            _send(owner, fee);
-            _send(winner, prize);
+            if(winner == g.player1) {
+                stats[g.player1].gamesWon++;
+                stats[g.player2].gamesLost++;
+            } else {
+                stats[g.player1].gamesLost++;
+                stats[g.player2].gamesWon++;
+            }
+            uint256 fee = g.betAmount * FEE / 10000;
+            if(fee > 0) {
+                _send(owner, fee);
+            }
+            _send(winner, 2 * g.betAmount - fee);
         }
+        stats[g.player1].lastMove = move;
+        if(move == Move.Rock) {
+            stats[g.player1].gamesRock++;
+        } else if(move == Move.Paper) {
+            stats[g.player1].gamesPaper++;
+        } else if(move == Move.Scissors) {
+            stats[g.player1].gamesScissors++;
+        }
+        stats[g.player2].lastMove = g.move2;
+        if(g.move2 == Move.Rock) {
+            stats[g.player2].gamesRock++;
+        } else if(g.move2 == Move.Paper) {
+            stats[g.player2].gamesPaper++;
+        } else if(g.move2 == Move.Scissors) {
+            stats[g.player2].gamesScissors++;
+        }
+        emit GameFinished(gameId, winner, g.betAmount);
     }
 
     function _evaluate(Move m1, Move m2, address p1, address p2)
