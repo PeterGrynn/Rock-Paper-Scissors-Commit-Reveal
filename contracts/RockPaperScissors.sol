@@ -118,7 +118,7 @@ contract RockPaperScissors {
         if (move != Move.Rock && move != Move.Paper && move != Move.Scissors) revert InvalidMove();
         if (keccak256(abi.encodePacked(move, salt)) != g.commitHash) revert InvalidCommit();
         g.player1 = payable(address(0));
-        address winner = _evaluate(move, g.move2, payable(msg.sender), g.player2);
+        address winner = _evaluate(move, g.move2, msg.sender, g.player2);
         if (winner == address(0)) {
             stats[msg.sender].gamesDraw++;
             stats[g.player2].gamesDraw++;
