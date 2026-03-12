@@ -117,11 +117,8 @@ contract RockPaperScissors {
     // ── Player 1: reveal ────────────────────────────────────────────────────
     function reveal(uint256 gameId, Move move, bytes32 salt) external {
         Game storage g = games[gameId];
-        if (g.player2 == payable(address(0))){
-            cancelGame(gameId);
-            return;
-        }
-        if (msg.sender != g.player1 || msg.sender == payable(address(0))) revert NotPlayer();
+        if (g.player1 != payable(msg.sender)) revert NotPlayer();
+        if (g.player2 == payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
         if (move != Move.Rock && move != Move.Paper && move != Move.Scissors) revert InvalidMove();
         if (keccak256(abi.encodePacked(move, salt)) != g.commitHash) revert InvalidCommit();
         g.player1 = payable(address(0));
