@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title RockPaperScissors
  * @notice On-chain Rock Paper Scissors — fixed bet 0.0005 ETH, 1% fee to owner.
+ *
  */
 contract RockPaperScissors {
     enum Move { None, Rock, Paper, Scissors }
