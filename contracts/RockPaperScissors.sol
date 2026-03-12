@@ -90,6 +90,7 @@ contract RockPaperScissors {
     // ── Player 2: join & play openly ────────────────────────────────────────
     function joinGame(uint256 gameId, Move move) external payable {
         Game storage g = games[gameId];
+        if (g.player1 == payable(msg.sender)) revert NotPlayer();
         if (g.player2 != payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
         if (msg.value != g.betAmount) revert WrongBetAmount();
         if (move != Move.Rock && move != Move.Paper && move != Move.Scissors) revert InvalidMove();
