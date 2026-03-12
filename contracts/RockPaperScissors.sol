@@ -34,7 +34,7 @@ contract RockPaperScissors {
     mapping(uint256 => Game) public games;
     mapping(address => Stat) public stats;
 
-    event GameCreated(uint256 indexed gameId, address indexed player1, uint128 betAmount);
+    event GameCreated(uint256 indexed gameId, address indexed player1, uint256 betAmount);
     event GameJoined(uint256 indexed gameId, address indexed player2, Move move);
     event GameCanceled(uint256 indexed gameId);
     event GameClosed(uint256 indexed gameId, address indexed player2, uint256 betAmount);
