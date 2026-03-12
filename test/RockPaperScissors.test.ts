@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { RockPaperScissors } from "../typechain-types";
 
 const Move = { None: 0, Rock: 1, Paper: 2, Scissors: 3 } as const;
@@ -139,13 +140,21 @@ describe("RockPaperScissors", () => {
       await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
     });
 
-    it("gracz 1 odbiera zwrot gdy nikt nie dołączył", async () => {
+    it("revert jeśli za wcześnie (od razu po stworzeniu gry)", async () => {
+      await expect(
+        rps.connect(player1).claimNoOpponent(1)
+      ).to.be.revertedWithCustomError(rps, "TooEarly");
+    });
+
+    it("gracz 1 odbiera zwrot po 5 minutach gdy nikt nie dołączył", async () => {
+      await time.increase(5 * 60);
       await expect(rps.connect(player1).claimNoOpponent(1))
         .to.emit(rps, "GameFinished")
         .withArgs(1, player1.address, BET);
     });
 
     it("revert jeśli ktoś inny próbuje odebrać", async () => {
+      await time.increase(5 * 60);
       await expect(
         rps.connect(other).claimNoOpponent(1)
       ).to.be.revertedWithCustomError(rps, "NotPlayer");
@@ -153,8 +162,59 @@ describe("RockPaperScissors", () => {
 
     it("revert jeśli gra już ma gracza 2 (Committed)", async () => {
       await rps.connect(player2).joinGame(1, Move.Rock, { value: BET });
+      await time.increase(5 * 60);
       await expect(
         rps.connect(player1).claimNoOpponent(1)
+      ).to.be.revertedWithCustomError(rps, "InvalidGameState");
+    });
+  });
+
+  // ── claimNoOpponentPlayer2 ─────────────────────────────────────────────────
+  describe("claimNoOpponentPlayer2", () => {
+    const fee = (BET * 2n * 100n) / 10_000n;
+    const prize = BET * 2n - fee;
+
+    beforeEach(async () => {
+      await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
+      await rps.connect(player2).joinGame(1, Move.Scissors, { value: BET });
+    });
+
+    it("revert jeśli za wcześnie (od razu po dołączeniu gracza 2)", async () => {
+      await expect(
+        rps.connect(player2).claimNoOpponentPlayer2(1)
+      ).to.be.revertedWithCustomError(rps, "TooEarly");
+    });
+
+    it("gracz 2 odbiera pulę po 5 minutach gdy gracz 1 nie zrobił reveal", async () => {
+      await time.increase(5 * 60);
+      await expect(rps.connect(player2).claimNoOpponentPlayer2(1))
+        .to.emit(rps, "GameFinished")
+        .withArgs(1, player2.address, prize);
+    });
+
+    it("gracz 2 dostaje 99% puli, owner 1% przy claim po timeout", async () => {
+      await time.increase(5 * 60);
+      await expect(rps.connect(player2).claimNoOpponentPlayer2(1))
+        .to.changeEtherBalances(
+          [player2, owner],
+          [prize, fee],
+          { includeFee: false }
+        );
+    });
+
+    it("revert jeśli ktoś inny próbuje odebrać", async () => {
+      await time.increase(5 * 60);
+      await expect(
+        rps.connect(other).claimNoOpponentPlayer2(1)
+      ).to.be.revertedWithCustomError(rps, "NotPlayer");
+    });
+
+    it("revert jeśli gra jest już Open a nie Committed", async () => {
+      // próba na świeżej grze (Open), nie Committed
+      await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
+      await time.increase(5 * 60);
+      await expect(
+        rps.connect(player2).claimNoOpponentPlayer2(2)
       ).to.be.revertedWithCustomError(rps, "InvalidGameState");
     });
   });
@@ -188,8 +248,9 @@ describe("RockPaperScissors", () => {
       );
     });
 
-    it("claimNoOpponent — gracz 1 dostaje pełny zwrot", async () => {
+    it("claimNoOpponent — gracz 1 dostaje pełny zwrot po 5 minutach", async () => {
       await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
+      await time.increase(5 * 60);
       await expect(rps.connect(player1).claimNoOpponent(1)).to.changeEtherBalance(
         player1,
         BET,

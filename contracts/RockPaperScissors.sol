@@ -17,7 +17,11 @@ contract RockPaperScissors {
         Move move2;
         GameState state;
         address winner;
+        uint256 createdAt;
+        uint256 joinedAt;
     }
+
+    uint256 public constant CLAIM_TIMEOUT = 5 minutes;
 
     uint256 public constant BET = 0.000005 ether;
     uint256 public constant FEE_BPS = 100; // 1% = 100 / 10000
@@ -37,6 +41,7 @@ contract RockPaperScissors {
     error NotPlayer();
     error WrongBetAmount();
     error TransferFailed();
+    error TooEarly();
 
     constructor() {
         owner = msg.sender;
@@ -54,7 +59,9 @@ contract RockPaperScissors {
             move1: Move.None,
             move2: Move.None,
             state: GameState.Open,
-            winner: address(0)
+            winner: address(0),
+            createdAt: block.timestamp,
+            joinedAt: 0
         });
         emit GameCreated(gameId, msg.sender);
     }
@@ -69,6 +76,7 @@ contract RockPaperScissors {
         g.player2 = msg.sender;
         g.move2 = move;
         g.state = GameState.Committed;
+        g.joinedAt = block.timestamp;
         emit GameJoined(gameId, msg.sender);
     }
 
@@ -86,22 +94,30 @@ contract RockPaperScissors {
         _finish(gameId);
     }
 
+    // Player 2 claims pot if player 1 never revealed — min 5 min after joining
     function claimNoOpponentPlayer2(uint256 gameId) external {
         Game storage g = games[gameId];
-        if (g.state != GameState.Open) revert InvalidGameState();
+        if (g.state != GameState.Committed) revert InvalidGameState();
         if (msg.sender != g.player2) revert NotPlayer();
+        if (block.timestamp < g.joinedAt + CLAIM_TIMEOUT) revert TooEarly();
 
         g.state = GameState.Finished;
         g.winner = g.player2;
 
-        emit GameFinished(gameId, g.player2, BET);
-        _send(g.player2, BET);
+        uint256 pot = BET * 2;
+        uint256 fee = pot * FEE_BPS / 10_000;
+        uint256 prize = pot - fee;
+        emit GameFinished(gameId, g.player2, prize);
+        _send(owner, fee);
+        _send(g.player2, prize);
     }
 
+    // Player 1 claims back bet if player 2 never joined — min 5 min after game creation
     function claimNoOpponent(uint256 gameId) external {
         Game storage g = games[gameId];
         if (g.state != GameState.Open) revert InvalidGameState();
         if (msg.sender != g.player1) revert NotPlayer();
+        if (block.timestamp < g.createdAt + CLAIM_TIMEOUT) revert TooEarly();
 
         g.state = GameState.Finished;
         g.winner = g.player1;
