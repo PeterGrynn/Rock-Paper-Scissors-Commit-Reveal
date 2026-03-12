@@ -62,6 +62,31 @@ contract RockPaperScissors {
         FEE = newFee;
     }
 
+    // ── View last open game ───────────────────────────────────────────────────────
+    function getLastOpenGame(uint256 limit, uint256 minBetAmount, uint256 maxBetAmount) external view returns (Game memory) {
+        for (uint256 i = 0; i < limit && i < gameCounter; i++) {
+            Game storage g = games[gameCounter - i - 1];
+            if (g.player1 == payable(address(0)) || g.player2 != payable(address(0))) continue;
+            if (g.betAmount < minBetAmount || g.betAmount > maxBetAmount) continue;
+            return Game({
+                player1: g.player1,
+                player2: g.player2,
+                commitHash: g.commitHash,
+                betAmount: g.betAmount,
+                blockNumber: g.blockNumber,
+                move2: g.move2
+            });
+        }
+        return Game({
+            player1: payable(address(0)),
+            player2: payable(address(0)),
+            commitHash: bytes32(0),
+            betAmount: 0,
+            blockNumber: 0,
+            move2: Move.None
+        });
+    }
+
     // ── Player 1: commit move ────────────────────────────────────────────────
     function createGame(bytes32 commitHash) external payable returns (uint256 gameId) {
         if (uint256(uint128(msg.value)) != msg.value) revert WrongBetAmount();
@@ -77,6 +102,7 @@ contract RockPaperScissors {
         gameCounter++;
     }
 
+    // ── Player 1: cancel game ────────────────────────────────────────────────
     function cancelGame(uint256 gameId) external {
         Game storage g = games[gameId];
         if (g.player1 != payable(msg.sender)) revert NotPlayer();
@@ -87,7 +113,7 @@ contract RockPaperScissors {
         emit GameCanceled(gameId);
     }
 
-    // ── Player 2: join & play openly ────────────────────────────────────────
+    // ── Player 2: join game ───────────────────────────────────────────────────
     function joinGame(uint256 gameId, Move move) external payable {
         Game storage g = games[gameId];
         if (g.player1 == payable(msg.sender)) revert NotPlayer();
@@ -100,6 +126,7 @@ contract RockPaperScissors {
         emit GameJoined(gameId, msg.sender, move);
     }
 
+    // ── Player 2: close game ───────────────────────────────────────────────────
     function closeGame(uint256 gameId) external {
         Game storage g = games[gameId];
         if (g.player2 != payable(msg.sender)) revert NotPlayer();
@@ -114,7 +141,7 @@ contract RockPaperScissors {
         emit GameClosed(gameId, msg.sender, g.betAmount);
     }
 
-    // ── Player 1: reveal ────────────────────────────────────────────────────
+    // ── Player 1: reveal move ──────────────────────────────────────────────────
     function reveal(uint256 gameId, Move move, bytes32 salt) external {
         Game storage g = games[gameId];
         if (g.player1 != payable(msg.sender)) revert NotPlayer();

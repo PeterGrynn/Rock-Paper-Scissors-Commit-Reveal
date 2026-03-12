@@ -154,6 +154,56 @@ describe("RockPaperScissors", () => {
     });
   });
 
+  // ── getLastOpenGame ─────────────────────────────────────────────────────────
+  describe("getLastOpenGame", () => {
+    it("returns empty game when there are no open games", async () => {
+      const game = await rps.getLastOpenGame(10, 0, BET * 10n);
+      expect(game.player1).to.equal(ethers.ZeroAddress);
+      expect(game.player2).to.equal(ethers.ZeroAddress);
+      expect(game.betAmount).to.equal(0n);
+      expect(game.move2).to.equal(Move.None);
+    });
+
+    it("returns the last open game within bet range", async () => {
+      const commit = buildCommit(Move.Rock, SALT);
+
+      // game 0: open
+      await rps.connect(player1).createGame(commit, { value: BET });
+
+      // game 1: created then joined (no longer open)
+      await rps.connect(player1).createGame(commit, { value: BET * 2n });
+      await rps.connect(player2).joinGame(1, Move.Paper, { value: BET * 2n });
+
+      // game 2: latest open game
+      await rps.connect(player2).createGame(commit, { value: BET * 3n });
+
+      const game = await rps.getLastOpenGame(10, BET, BET * 3n);
+      expect(game.player1).to.equal(player2.address);
+      expect(game.player2).to.equal(ethers.ZeroAddress);
+      expect(game.betAmount).to.equal(BET * 3n);
+      expect(game.move2).to.equal(Move.None);
+    });
+
+    it("skips games outside bet range and returns earlier matching game", async () => {
+      const commit = buildCommit(Move.Rock, SALT);
+
+      // game 0: bet = BET (in range)
+      await rps.connect(player1).createGame(commit, { value: BET });
+
+      // game 1: bet = 2×BET (in range)
+      await rps.connect(player1).createGame(commit, { value: BET * 2n });
+
+      // game 2: bet = 3×BET (out of range because max = 2×BET)
+      await rps.connect(player1).createGame(commit, { value: BET * 3n });
+
+      const game = await rps.getLastOpenGame(10, BET, BET * 2n);
+      expect(game.player1).to.equal(player1.address);
+      expect(game.player2).to.equal(ethers.ZeroAddress);
+      expect(game.betAmount).to.equal(BET * 2n);
+      expect(game.move2).to.equal(Move.None);
+    });
+  });
+
   // ── cancelGame ──────────────────────────────────────────────────────────────
   describe("cancelGame", () => {
     beforeEach(async () => {
