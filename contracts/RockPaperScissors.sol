@@ -73,7 +73,7 @@ contract RockPaperScissors {
                 player2: g.player2,
                 commitHash: g.commitHash,
                 betAmount: g.betAmount,
-                blockNumber: g.blockNumber,
+                blockNumber: uint64(block.number - g.blockNumber),
                 move2: g.move2
             });
         }
@@ -107,7 +107,7 @@ contract RockPaperScissors {
         Game storage g = games[gameId];
         if (g.player1 != payable(msg.sender)) revert NotPlayer();
         if (g.player2 != payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
-        if (block.number - g.blockNumber < 128) revert InvalidGameState();
+        if (block.number - g.blockNumber < 256) revert InvalidGameState();
         g.player1 = payable(address(0));
         _send(msg.sender, g.betAmount);
         emit GameCanceled(gameId);
@@ -131,7 +131,7 @@ contract RockPaperScissors {
         Game storage g = games[gameId];
         if (g.player2 != payable(msg.sender)) revert NotPlayer();
         if (g.player2 == payable(address(0)) || g.player1 == payable(address(0))) revert InvalidGameState();
-        if (block.number - g.blockNumber < 256) revert InvalidGameState();
+        if (block.number - g.blockNumber < 512) revert InvalidGameState();
         g.player1 = payable(address(0));
         uint256 fee = g.betAmount * FEE / 10000;
         if(fee > 0) {
@@ -152,16 +152,16 @@ contract RockPaperScissors {
         address winner = _evaluate(move, g.move2, msg.sender, g.player2);
         if (winner == address(0)) {
             stats[msg.sender].gamesDraw++;
-            stats[g.player2].gamesDraw++;
+            //stats[g.player2].gamesDraw++;
             _send(msg.sender, g.betAmount);
             _send(g.player2, g.betAmount);
         } else {
             if(winner == msg.sender) {
                 stats[msg.sender].gamesWon++;
-                stats[g.player2].gamesLost++;
+                //stats[g.player2].gamesLost++;
             } else {
                 stats[msg.sender].gamesLost++;
-                stats[g.player2].gamesWon++;
+                //stats[g.player2].gamesWon++;
             }
             uint256 fee = g.betAmount * FEE / 10000;
             if(fee > 0) {
@@ -177,14 +177,14 @@ contract RockPaperScissors {
         } else if(move == Move.Scissors) {
             stats[msg.sender].gamesScissors++;
         }
-        stats[g.player2].lastMove = g.move2;
-        if(g.move2 == Move.Rock) {
-            stats[g.player2].gamesRock++;
-        } else if(g.move2 == Move.Paper) {
-            stats[g.player2].gamesPaper++;
-        } else if(g.move2 == Move.Scissors) {
-            stats[g.player2].gamesScissors++;
-        }
+        //stats[g.player2].lastMove = g.move2;
+        //if(g.move2 == Move.Rock) {
+        //    stats[g.player2].gamesRock++;
+        //} else if(g.move2 == Move.Paper) {
+        //    stats[g.player2].gamesPaper++;
+        //} else if(g.move2 == Move.Scissors) {
+        //    stats[g.player2].gamesScissors++;
+        //}
         emit GameFinished(gameId, winner, g.betAmount);
     }
 

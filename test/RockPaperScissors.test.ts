@@ -162,6 +162,7 @@ describe("RockPaperScissors", () => {
       expect(game.player2).to.equal(ethers.ZeroAddress);
       expect(game.betAmount).to.equal(0n);
       expect(game.move2).to.equal(Move.None);
+      expect(game.blockNumber).to.equal(0n);
     });
 
     it("returns the last open game within bet range", async () => {
@@ -201,6 +202,17 @@ describe("RockPaperScissors", () => {
       expect(game.player2).to.equal(ethers.ZeroAddress);
       expect(game.betAmount).to.equal(BET * 2n);
       expect(game.move2).to.equal(Move.None);
+    });
+
+    it("returns game age in blocks as blockNumber", async () => {
+      const commit = buildCommit(Move.Rock, SALT);
+
+      await rps.connect(player1).createGame(commit, { value: BET });
+      await mine(5);
+
+      const game = await rps.getLastOpenGame(10, 0, BET * 10n);
+      expect(game.player1).to.equal(player1.address);
+      expect(game.blockNumber).to.equal(5n);
     });
   });
 
@@ -578,17 +590,19 @@ describe("RockPaperScissors", () => {
       expect(s.lastMove).to.equal(Move.Rock);
     });
 
-    it("updates player2 stats after losing with Scissors", async () => {
+    it("does not update player2 stats after losing with Scissors", async () => {
       await rps.connect(player1).createGame(buildCommit(Move.Rock, SALT), { value: BET });
       await rps.connect(player2).joinGame(0, Move.Scissors, { value: BET });
       await rps.connect(player1).reveal(0, Move.Rock, SALT);
 
       const s = await rps.stats(player2.address);
       expect(s.gamesWon).to.equal(0);
-      expect(s.gamesLost).to.equal(1);
+      expect(s.gamesLost).to.equal(0);
       expect(s.gamesDraw).to.equal(0);
-      expect(s.gamesScissors).to.equal(1);
-      expect(s.lastMove).to.equal(Move.Scissors);
+      expect(s.gamesRock).to.equal(0);
+      expect(s.gamesPaper).to.equal(0);
+      expect(s.gamesScissors).to.equal(0);
+      expect(s.lastMove).to.equal(Move.None);
     });
 
     it("updates stats after player2 wins", async () => {
@@ -597,11 +611,8 @@ describe("RockPaperScissors", () => {
       await rps.connect(player1).reveal(0, Move.Scissors, SALT);
 
       const s1 = await rps.stats(player1.address);
-      const s2 = await rps.stats(player2.address);
       expect(s1.gamesLost).to.equal(1);
       expect(s1.gamesScissors).to.equal(1);
-      expect(s2.gamesWon).to.equal(1);
-      expect(s2.gamesRock).to.equal(1);
     });
 
     it("updates stats after a draw (Paper vs Paper)", async () => {
@@ -610,13 +621,17 @@ describe("RockPaperScissors", () => {
       await rps.connect(player1).reveal(0, Move.Paper, SALT);
 
       const s1 = await rps.stats(player1.address);
-      const s2 = await rps.stats(player2.address);
       expect(s1.gamesDraw).to.equal(1);
       expect(s1.gamesPaper).to.equal(1);
       expect(s1.lastMove).to.equal(Move.Paper);
-      expect(s2.gamesDraw).to.equal(1);
-      expect(s2.gamesPaper).to.equal(1);
-      expect(s2.lastMove).to.equal(Move.Paper);
+      const s2 = await rps.stats(player2.address);
+      expect(s2.gamesWon).to.equal(0);
+      expect(s2.gamesLost).to.equal(0);
+      expect(s2.gamesDraw).to.equal(0);
+      expect(s2.gamesRock).to.equal(0);
+      expect(s2.gamesPaper).to.equal(0);
+      expect(s2.gamesScissors).to.equal(0);
+      expect(s2.lastMove).to.equal(Move.None);
     });
 
     it("accumulates stats across multiple games", async () => {
